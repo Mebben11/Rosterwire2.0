@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+nba_api
+pandas
+httpx
+beautifulsoup4
+aiohttp
+python-dotenv
+flask
+flask-cors
