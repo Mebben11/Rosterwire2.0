@@ -33,14 +33,14 @@ cd {Rosterwire2.0 Location}
 Install dependencies:<br>
 npm install<br>
 <br>
-###📦 2. Frontend Setup (Next.js)<br>
+#📦 2. Frontend Setup (Next.js)<br>
 Start the frontend:<br>
 npm run dev<br>
 <br>
 This will start the app at:<br>
 http://localhost:3000<br>
 <br>
-###🐍 3. Backend Setup (Flask API) - new cmd (recommended)<br>
+#🐍 3. Backend Setup (Flask API) - new cmd (recommended)<br>
 Navigate to the Flask API directory:<br>
 cd {Download Location}/Rosterwire2.0/nba_server<br>
 <br>
@@ -90,7 +90,7 @@ Root/
     ├── StarRating.module.css<br>
     └── TransactionsTable.module.css<br>
 <br>
-###🚀 How to Start the App<br>
+#🚀 How to Start the App<br>
 cd {Download Location}/Rosterwire2.0/nba_server<br>
 source venv/scripts/activate<br>
 python app.py<br>
@@ -102,11 +102,11 @@ npm run dev<br>
 Then visit:<br>
 📍 http://localhost:3000<br>
 <br>
-🔚 Notes<br>
+#🔚 Notes<br>
 API filters out preseason and summer league games.<br>
 Players with < 5 GP (Games Played) are excluded.<br>
 Project fetches from the nba_api.stats.endpoints.commonplayerinfo and others.<br>
 <br>
-📫 Contact<br>
+#📫 Contact<br>
 Created by Michael Ebben<br>
 Contact for questions or feature suggestions. - Mikeyebben@gmail.com<br>
