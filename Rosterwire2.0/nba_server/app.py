@@ -5,6 +5,7 @@ from nba_api.stats.endpoints import playercareerstats
 import threading
 import logging
 import time
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -18,10 +19,6 @@ all_teams = nba_teams.get_teams()
 all_players = players.get_active_players()
 
 def normalize_stats(stats):
-    """
-    Extract key stats and convert to per-game values by dividing by GP.
-    Returns floats, 0 if GP=0.
-    """
     gp = float(stats.get("GP", 0))
     keys_to_normalize = ["PTS", "AST", "REB", "STL", "BLK", "TOV", "MIN"]
     per_game_stats = {}
@@ -34,11 +31,8 @@ def normalize_stats(stats):
             val = 0
         per_game_stats[key] = round(val / gp, 1) if gp > 0 else 0.0
 
-    # Include GP and GS (games started) as is
     per_game_stats["GP"] = gp
     per_game_stats["GS"] = float(stats.get("GS", 0))
-
-    # Include shooting percentages as-is (not per game)
     per_game_stats["FG_PCT"] = float(stats.get("FG_PCT", 0))
     per_game_stats["FG3_PCT"] = float(stats.get("FG3_PCT", 0))
     per_game_stats["FT_PCT"] = float(stats.get("FT_PCT", 0))
@@ -46,20 +40,6 @@ def normalize_stats(stats):
     return per_game_stats
 
 def compute_player_value(per_game_stats, age=None, advanced_stats=None):
-    """
-    Compute a player's star rating (1 to 5 stars) using:
-    - Per-game stats: PTS, REB, AST, STL, BLK, TOV
-    - Shooting percentages: FG_PCT, FG3_PCT, FT_PCT
-    - Age (optional): penalize older players slightly
-    - Advanced stats (optional): e.g. PER, WS/48, BPM if available
-
-    The formula weights these with normalization and scales down the final star rating
-    to reduce inflated star counts for average players.
-
-    Returns: int star rating between 1 and 5.
-    """
-
-    # Base weighted sum from per-game stats
     base = (
         per_game_stats.get("PTS", 0) * 0.3 +
         per_game_stats.get("REB", 0) * 0.15 +
@@ -69,47 +49,37 @@ def compute_player_value(per_game_stats, age=None, advanced_stats=None):
         per_game_stats.get("TOV", 0) * 0.15
     )
 
-    # Add shooting percentages with modest weights (scale to 0-1)
     fg_pct = per_game_stats.get("FG_PCT", 0)
     fg3_pct = per_game_stats.get("FG3_PCT", 0)
     ft_pct = per_game_stats.get("FT_PCT", 0)
 
-    shooting_score = (fg_pct * 0.4 + fg3_pct * 0.3 + ft_pct * 0.3) * 5  # Scale to ~0-5
-
-    # Combine base and shooting, weighted
+    shooting_score = (fg_pct * 0.4 + fg3_pct * 0.3 + ft_pct * 0.3) * 5
     combined_score = base * 0.7 + shooting_score * 0.3
 
-    # Age adjustment: peak range ~24-29, penalize older players slightly
     if age is not None:
         if age < 24:
-            age_factor = 0.95  # Slight penalty for youth/inexperience
+            age_factor = 0.95
         elif 24 <= age <= 29:
-            age_factor = 1.0   # Peak
+            age_factor = 1.0
         elif 30 <= age <= 34:
-            age_factor = 0.9   # Mild decline
+            age_factor = 0.9
         else:
-            age_factor = 0.7   # Significant decline
+            age_factor = 0.7
         combined_score *= age_factor
 
-    # Optional advanced stats adjustment (if advanced_stats dict given)
-    # Example keys: 'PER', 'WS/48', 'BPM' - normalize roughly around league average
     if advanced_stats:
-        per = advanced_stats.get('PER', 15)  # league avg PER ~15
-        ws_per_48 = advanced_stats.get('WS/48', 0.1)  # typical range 0-0.2
-        bpm = advanced_stats.get('BPM', 0)  # Box Plus/Minus average ~0
+        per = advanced_stats.get('PER', 15)
+        ws_per_48 = advanced_stats.get('WS/48', 0.1)
+        bpm = advanced_stats.get('BPM', 0)
 
-        # Normalize and weight
         adv_score = (
-            (per / 20) * 0.5 +       # scale PER max ~20+
-            (ws_per_48 / 0.2) * 0.3 +  # scale WS/48 max ~0.2
-            (max(bpm, 0) / 10) * 0.2    # scale positive BPM max ~10
-        ) * 5  # scale 0-5 roughly
+            (per / 20) * 0.5 +
+            (ws_per_48 / 0.2) * 0.3 +
+            (max(bpm, 0) / 10) * 0.2
+        ) * 5
 
-        # Blend with combined_score
         combined_score = combined_score * 0.7 + adv_score * 0.3
 
-    # Final star rating scaled down more strictly
-    # Map combined_score to 1-5 stars, with higher thresholds for 4-5 stars
     if combined_score < 1.5:
         star = 1
     elif combined_score < 2.5:
@@ -123,55 +93,95 @@ def compute_player_value(per_game_stats, age=None, advanced_stats=None):
 
     return star
 
-def fetch_player_data(player_id):
-    try:
-        career_df = playercareerstats.PlayerCareerStats(player_id=player_id).get_data_frames()[0]
-        if career_df.empty:
+def fetch_player_data(player_id, max_retries=3):
+    if player_id in player_data_cache:
+        logging.info(f"Cache hit for player ID {player_id}")
+        return player_data_cache[player_id]
+
+    player_name = next((p["full_name"] for p in all_players if p["id"] == player_id), f"ID {player_id}")
+
+    retries = 0
+    backoff = 1  # start 1 sec
+    while retries < max_retries:
+        try:
+            career_df = playercareerstats.PlayerCareerStats(player_id=player_id, timeout=5).get_data_frames()[0]
+            if career_df.empty:
+                logging.info(f"No career data for {player_name} (ID {player_id}), caching None")
+                player_data_cache[player_id] = None
+                return None
+
+            last_season = career_df.iloc[-1].fillna(0).to_dict()
+            gp = float(last_season.get("GP", 0))
+            if gp == 0:
+                logging.info(f"{player_name} (ID {player_id}) has zero games played last season, caching None")
+                player_data_cache[player_id] = None
+                return None
+
+            team_abbr = last_season.get("TEAM_ABBREVIATION", "")
+            if not team_abbr:
+                logging.info(f"{player_name} (ID {player_id}) has no team abbreviation, caching None")
+                player_data_cache[player_id] = None
+                return None
+
+            per_game_stats = normalize_stats(last_season)
+            star_value = compute_player_value(per_game_stats)
+
+            data = {
+                "id": player_id,
+                "name": player_name,
+                "team": {
+                    "id": last_season.get("TEAM_ID", -1),
+                    "abbreviation": team_abbr.upper()
+                },
+                "last_season_stats": per_game_stats,
+                "star_value": star_value
+            }
+
+            player_data_cache[player_id] = data
+            logging.info(f"Cached data for player {player_name} (ID {player_id}) successfully")
+            return data
+
+        except requests.exceptions.ReadTimeout:
+            retries += 1
+            logging.warning(f"Read timeout for {player_name} (ID {player_id}), retry {retries}/{max_retries} after {backoff}s...")
+            time.sleep(backoff)
+            backoff *= 2
+        except Exception as e:
+            logging.warning(f"Error fetching stats for {player_name} (ID {player_id}): {e}, caching None")
+            player_data_cache[player_id] = None
             return None
 
-        last_season = career_df.iloc[-1].fillna(0).to_dict()
-        gp = float(last_season.get("GP", 0))
-        if gp == 0:
-            return None
+    logging.warning(f"Failed to fetch data for {player_name} (ID {player_id}) after {max_retries} retries, caching None")
+    player_data_cache[player_id] = None
+    return None
 
-        team_abbr = last_season.get("TEAM_ABBREVIATION", "")
-        if not team_abbr:
-            return None
-
-        per_game_stats = normalize_stats(last_season)
-        star_value = compute_player_value(per_game_stats)
-
-        player_name = next((p["full_name"] for p in all_players if p["id"] == player_id), "Unknown")
-
-        return {
-            "id": player_id,
-            "name": player_name,
-            "team": {
-                "id": last_season.get("TEAM_ID", -1),
-                "abbreviation": team_abbr.upper()
-            },
-            "last_season_stats": per_game_stats,
-            "star_value": star_value
-        }
-    except Exception as e:
-        logging.warning(f"Error fetching stats for player {player_id}: {e}")
-        return None
 def prefetch_all_players():
     logging.info("Starting background player prefetch...")
+    consecutive_failures = 0
     for i, player in enumerate(all_players):
         pid = player["id"]
         if pid in player_data_cache:
             continue
+
         data = fetch_player_data(pid)
         if data:
-            player_data_cache[pid] = data
+            consecutive_failures = 0
             abbrev = data["team"]["abbreviation"]
             if abbrev not in player_team_cache:
                 player_team_cache[abbrev] = []
-            player_team_cache[abbrev].append(data)
-        if i % 50 == 0:
-            logging.info(f"Prefetched {i} players so far, sleeping 2 seconds to avoid timeout...")
-            time.sleep(2)  # pause every 50 players to reduce load
+            if all(p['id'] != data['id'] for p in player_team_cache[abbrev]):
+                player_team_cache[abbrev].append(data)
+        else:
+            consecutive_failures += 1
+            logging.warning(f"Consecutive failures: {consecutive_failures}")
+            if consecutive_failures >= 3:
+                logging.warning("Too many failures, sleeping 30 seconds to cool down...")
+                time.sleep(30)  # this sleep fully blocks here
+                consecutive_failures = 0
+
+        if i > 0 and i % 25 == 0:
+            logging.info(f"Prefetched {i} players so far, sleeping 12 seconds to avoid timeout...")
+            time.sleep(12)
     logging.info("Finished background prefetch.")
 
 @app.route('/api/players')
@@ -184,12 +194,11 @@ def get_all_players():
             if data:
                 results.append(data)
         return jsonify({"players": results})
-    return jsonify({"players": list(player_data_cache.values())})
+    return jsonify({"players": [p for p in player_data_cache.values() if p is not None]})
 
 @app.route('/api/players/team/<team_abbr>')
 def get_players_by_team(team_abbr):
     team_abbr = team_abbr.upper()
-
     if team_abbr in player_team_cache:
         return jsonify({"players": player_team_cache[team_abbr]})
 
@@ -202,7 +211,8 @@ def get_players_by_team(team_abbr):
             continue
         if data["team"]["abbreviation"] != team_abbr:
             continue
-        filtered_players.append(data)
+        if all(p['id'] != data['id'] for p in filtered_players):
+            filtered_players.append(data)
 
     return jsonify({"players": filtered_players})
 
@@ -218,11 +228,11 @@ def get_teams():
     except Exception as e:
         logging.error(f"Error fetching teams: {e}")
         return jsonify({"detail": f"Error fetching teams: {str(e)}"}), 500
-    
+
 @app.route('/api/status')
 def get_cache_status():
     return jsonify({
-        "cached_players_count": len(player_data_cache),
+        "cached_players_count": len([p for p in player_data_cache.values() if p is not None]),
         "cached_teams": list(player_team_cache.keys())
     })
 
