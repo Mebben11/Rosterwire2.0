@@ -27,20 +27,20 @@ Rosterwire is a modern web application for viewing recent NBA transactions and e
 ## 🧰 Setup Instructions
 
 ### 1. 📦 Node/NPM Frontend Setup
-Clone the repository<br>
+Clone the repository:<br>
 git clone https://github.com/Mebben11/rosterwire.git<br>
 cd rosterwire<br>
 <br>
-Navigate to frontend<br>
+Navigate to frontend:<br>
 cd rosterwire-frontend<br>
 <br>
-Install dependencies<br>
+Install dependencies:<br>
 npm install<br>
 <br>
-Start Next.js dev server<br>
+Start Next.js dev server:<br>
 npm run dev<br>
 <br>
-Install Python dependencies<br>
+Install Python dependencies:<br>
 pip install -r requirements.txt<br>
 <br>
 ###📦 2. Frontend Setup (Next.js)<br>
