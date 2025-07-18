@@ -3,6 +3,14 @@ import { useTable, useSortBy } from 'react-table';
 import Sidebar from './Sidebar';
 import styles from '../styles/PlayersTable.module.css';
 
+function capitalizeWords(str) {
+  if (!str) return '';
+  return str
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export default function PlayersTable() {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -14,7 +22,7 @@ export default function PlayersTable() {
     fetch('http://localhost:5000/api/teams')
       .then(res => res.json())
       .then(data => {
-        setTeams(data.teams || []);
+        setTeams(data || []);
       })
       .catch(err => console.error('Failed to fetch teams:', err));
   }, []);
@@ -26,10 +34,10 @@ export default function PlayersTable() {
       return;
     }
     setLoading(true);
-    fetch(`http://localhost:5000/api/players/team/${selectedTeam}`)
+    fetch(`http://localhost:5000/api/rosters/players?team_abbr=${selectedTeam}`)
       .then(res => res.json())
       .then(data => {
-        setPlayers(data.players || []);
+        setPlayers(data || []);
         setLoading(false);
       })
       .catch(err => {
@@ -39,27 +47,56 @@ export default function PlayersTable() {
   }, [selectedTeam]);
 
   const columns = useMemo(() => [
-    { Header: 'Name', accessor: 'name' },
-    { Header: 'Team', accessor: row => row.team.abbreviation, id: 'team' },
+    {
+      Header: 'Name',
+      accessor: 'PLAYER_NAME',
+      Cell: ({ value }) => capitalizeWords(value.toLowerCase()),
+    },
+    {
+      Header: 'Team',
+      accessor: 'TEAM_ABBREVIATION',
+      Cell: ({ value }) => capitalizeWords(value.toLowerCase()),
+      id: 'team',
+    },
     {
       Header: 'Star Rating',
-      accessor: 'star_value',
-      Cell: ({ value }) => getStarDisplay(value),
+      accessor: 'VALUE',
+      Cell: ({ value }) => getStarDisplay(value || 0),
     },
-    { Header: 'PTS', accessor: row => row.last_season_stats?.PTS || 0, id: 'pts' },
-    { Header: 'REB', accessor: row => row.last_season_stats?.REB || 0, id: 'reb' },
-    { Header: 'AST', accessor: row => row.last_season_stats?.AST || 0, id: 'ast' },
+    {
+      Header: 'PTS',
+      accessor: row => ((row.PTS && row.GP) ? (row.PTS / row.GP).toFixed(1) : '0.0'),
+      id: 'pts',
+    },
+    {
+      Header: 'REB',
+      accessor: row => ((row.REB && row.GP) ? (row.REB / row.GP).toFixed(1) : '0.0'),
+      id: 'reb',
+    },
+    {
+      Header: 'AST',
+      accessor: row => ((row.AST && row.GP) ? (row.AST / row.GP).toFixed(1) : '0.0'),
+      id: 'ast',
+    },
   ], []);
 
   const {
-    getTableProps, getTableBodyProps,
-    headerGroups, rows, prepareRow
+    getTableProps,
+    getTableBodyProps,
+    headerGroups,
+    rows,
+    prepareRow,
   } = useTable({ columns, data: players }, useSortBy);
 
   const getStarDisplay = (rating) => {
     const filled = Math.round(rating);
     const stars = Array.from({ length: 5 }, (_, i) => (
-      <span key={i} style={{ color: i < filled ? 'gold' : '#555', fontSize: '1.2rem' }}>★</span>
+      <span
+        key={i}
+        style={{ color: i < filled ? 'gold' : '#555', fontSize: '1.2rem' }}
+      >
+        ★
+      </span>
     ));
     return <div>{stars}</div>;
   };
@@ -82,8 +119,8 @@ export default function PlayersTable() {
           >
             <option value="">-- Select a Team --</option>
             {teams.map(team => (
-              <option key={team.id} value={team.abbreviation}>
-                {team.full_name} ({team.abbreviation})
+              <option key={team.ID} value={team.ABBREVIATION}>
+                {team.FULL_NAME} ({team.ABBREVIATION})
               </option>
             ))}
           </select>

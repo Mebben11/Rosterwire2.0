@@ -21,9 +21,7 @@ export default function TransactionsTable({ transactions }) {
   const goNext = () => currentPage < totalPages && setCurrentPage(currentPage + 1);
   const goLast = () => setCurrentPage(totalPages);
 
-  // Fixed height calculation: approx row height * itemsPerPage + header height + some padding
-  // Adjust row height (e.g. 48px) to match your actual CSS row height for best results
-    const fixedTableHeight = 48 * itemsPerPage + 56 + 30; 
+  const fixedTableHeight = 48 * itemsPerPage + 56 + 30; 
 
   return (
     <div className={styles.container}>
@@ -34,9 +32,9 @@ export default function TransactionsTable({ transactions }) {
         <thead>
           <tr>
             <th>Date</th>
-            <th>Player</th>
-            <th>Type</th>
             <th>Team</th>
+            <th>Type</th>
+            <th>Player</th>
             <th>Description</th>
           </tr>
         </thead>
@@ -51,9 +49,9 @@ export default function TransactionsTable({ transactions }) {
                   className={(startIdx + idx) % 2 === 0 ? styles.evenRow : styles.oddRow}
                 >
                   <td>{new Date(tx.TRANSACTION_DATE).toLocaleDateString()}</td>
-                  <td>{playerName}</td>
-                  <td>{tx.Transaction_Type}</td>
                   <td>{teamName}</td>
+                  <td>{tx.Transaction_Type}</td>
+                  <td>{playerName}</td>
                   <td>{tx.TRANSACTION_DESCRIPTION}</td>
                 </tr>
               );
@@ -68,7 +66,6 @@ export default function TransactionsTable({ transactions }) {
         </tbody>
       </table>
 
-      {/* Pagination Controls */}
       <div className={styles.pagination}>
         <button
           className={styles.pageButton}
