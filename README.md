@@ -28,7 +28,7 @@ git clone https://github.com/Mebben11/rosterwire.git<br>
 cd rosterwire<br>
 <br>
 Navigate to frontend:<br>
-cd rosterwire-frontend<br>
+cd {Rosterwire2.0 Location}
 <br>
 Install dependencies:<br>
 npm install<br>
