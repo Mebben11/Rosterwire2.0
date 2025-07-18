@@ -24,8 +24,8 @@ Rosterwire is a modern web application for viewing recent NBA transactions and e
 
 ### 1. 📦 Node/NPM Frontend Setup
 Clone the repository:<br>
-git clone https://github.com/Mebben11/rosterwire.git<br>
-cd rosterwire<br>
+git clone https://github.com/Mebben11/Rosterwire2.0.git<br>
+cd {Download Location}/Rosterwire2.<br>
 <br>
 Navigate to frontend:<br>
 cd {Rosterwire2.0 Location}
@@ -33,31 +33,21 @@ cd {Rosterwire2.0 Location}
 Install dependencies:<br>
 npm install<br>
 <br>
-Start Next.js dev server:<br>
-npm run dev<br>
-<br>
-Install Python dependencies:<br>
-pip install -r requirements.txt<br>
-<br>
 ###📦 2. Frontend Setup (Next.js)<br>
-#Navigate into the frontend directory and install dependencies:<br>
-cd {File Location} ex. Downloads/Rosterwire2.0<br>
-npm install<br>
-<br>
 Start the frontend:<br>
 npm run dev<br>
 <br>
 This will start the app at:<br>
 http://localhost:3000<br>
 <br>
-###🐍 3. Backend Setup (Flask API)<br>
+###🐍 3. Backend Setup (Flask API) - new cmd (recommended)<br>
 Navigate to the Flask API directory:<br>
-cd nba_server<br>
+cd {Download Location}/Rosterwire2.0/nba_server<br>
 <br>
 Create a virtual environment:<br>
 python -m venv venv<br>
 source venv/bin/activate  # On Windows: venv\Scripts\activate<br>
-
+<br>
 Install dependencies:<br>
 pip install -r requirements.txt<br>
 Start the Flask server:<br>
@@ -101,11 +91,11 @@ Root/
     └── TransactionsTable.module.css<br>
 <br>
 ###🚀 How to Start the App<br>
-cd Rosterwire2.0/nba_server<br>
+cd {Download Location}/Rosterwire2.0/nba_server<br>
 source venv/scripts/activate<br>
 python app.py<br>
 <br>
-cd Rosterwire2.0<br>
+(additional cmd) cd {Download Location}/Rosterwire2.0r<br>
 npm install<br>
 npm run dev<br>
 <br>
