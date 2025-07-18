@@ -5,7 +5,10 @@ from nba_api.stats.endpoints import playercareerstats
 import threading
 import logging
 import time
+import subprocess
 import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +20,8 @@ player_team_cache = {}
 
 all_teams = nba_teams.get_teams()
 all_players = players.get_active_players()
+
+# ... [normalize_stats, compute_player_value, fetch_player_data, fetch_player_data_with_one_retry, prefetch_all_players as before, just updated timing] ...
 
 def normalize_stats(stats):
     gp = float(stats.get("GP", 0))
@@ -93,95 +98,81 @@ def compute_player_value(per_game_stats, age=None, advanced_stats=None):
 
     return star
 
-def fetch_player_data(player_id, max_retries=3):
-    if player_id in player_data_cache:
-        logging.info(f"Cache hit for player ID {player_id}")
-        return player_data_cache[player_id]
-
+def fetch_player_data(player_id):
     player_name = next((p["full_name"] for p in all_players if p["id"] == player_id), f"ID {player_id}")
-
-    retries = 0
-    backoff = 1  # start 1 sec
-    while retries < max_retries:
-        try:
-            career_df = playercareerstats.PlayerCareerStats(player_id=player_id, timeout=5).get_data_frames()[0]
-            if career_df.empty:
-                logging.info(f"No career data for {player_name} (ID {player_id}), caching None")
-                player_data_cache[player_id] = None
-                return None
-
-            last_season = career_df.iloc[-1].fillna(0).to_dict()
-            gp = float(last_season.get("GP", 0))
-            if gp == 0:
-                logging.info(f"{player_name} (ID {player_id}) has zero games played last season, caching None")
-                player_data_cache[player_id] = None
-                return None
-
-            team_abbr = last_season.get("TEAM_ABBREVIATION", "")
-            if not team_abbr:
-                logging.info(f"{player_name} (ID {player_id}) has no team abbreviation, caching None")
-                player_data_cache[player_id] = None
-                return None
-
-            per_game_stats = normalize_stats(last_season)
-            star_value = compute_player_value(per_game_stats)
-
-            data = {
-                "id": player_id,
-                "name": player_name,
-                "team": {
-                    "id": last_season.get("TEAM_ID", -1),
-                    "abbreviation": team_abbr.upper()
-                },
-                "last_season_stats": per_game_stats,
-                "star_value": star_value
-            }
-
-            player_data_cache[player_id] = data
-            logging.info(f"Cached data for player {player_name} (ID {player_id}) successfully")
-            return data
-
-        except requests.exceptions.ReadTimeout:
-            retries += 1
-            logging.warning(f"Read timeout for {player_name} (ID {player_id}), retry {retries}/{max_retries} after {backoff}s...")
-            time.sleep(backoff)
-            backoff *= 2
-        except Exception as e:
-            logging.warning(f"Error fetching stats for {player_name} (ID {player_id}): {e}, caching None")
-            player_data_cache[player_id] = None
+    try:
+        career_df = playercareerstats.PlayerCareerStats(player_id=player_id).get_data_frames()[0]
+        if career_df.empty:
             return None
 
-    logging.warning(f"Failed to fetch data for {player_name} (ID {player_id}) after {max_retries} retries, caching None")
-    player_data_cache[player_id] = None
-    return None
+        last_season = career_df.iloc[-1].fillna(0).to_dict()
+        gp = float(last_season.get("GP", 0))
+        if gp == 0:
+            return None
+
+        team_abbr = last_season.get("TEAM_ABBREVIATION", "")
+        if not team_abbr:
+            return None
+
+        per_game_stats = normalize_stats(last_season)
+        star_value = compute_player_value(per_game_stats)
+
+        return {
+            "id": player_id,
+            "name": player_name,
+            "team": {
+                "id": last_season.get("TEAM_ID", -1),
+                "abbreviation": team_abbr.upper()
+            },
+            "last_season_stats": per_game_stats,
+            "star_value": star_value
+        }
+    except Exception as e:
+        logging.warning(f"Error fetching stats for {player_name}: {e}")
+        return None
+
+def fetch_player_data_with_one_retry(player_id):
+    data = fetch_player_data(player_id)
+    if data:
+        logging.info(f"Successfully fetched data for player {player_id}")
+        return data
+    else:
+        logging.warning(f"Initial fetch failed for player {player_id}, retrying once after 5s...")
+        time.sleep(5)
+        data = fetch_player_data(player_id)
+        if data:
+            logging.info(f"Successfully fetched data for player {player_id} on retry")
+            return data
+        else:
+            logging.warning(f"Failed to fetch data for player {player_id} after retry")
+            return None
 
 def prefetch_all_players():
     logging.info("Starting background player prefetch...")
     consecutive_failures = 0
-    for i, player in enumerate(all_players):
+
+    for i, player in enumerate(all_players, start=1):
         pid = player["id"]
         if pid in player_data_cache:
             continue
 
-        data = fetch_player_data(pid)
+        data = fetch_player_data_with_one_retry(pid)
         if data:
-            consecutive_failures = 0
+            player_data_cache[pid] = data
             abbrev = data["team"]["abbreviation"]
             if abbrev not in player_team_cache:
                 player_team_cache[abbrev] = []
-            if all(p['id'] != data['id'] for p in player_team_cache[abbrev]):
-                player_team_cache[abbrev].append(data)
+            player_team_cache[abbrev].append(data)
+            consecutive_failures = 0
         else:
             consecutive_failures += 1
-            logging.warning(f"Consecutive failures: {consecutive_failures}")
-            if consecutive_failures >= 3:
-                logging.warning("Too many failures, sleeping 30 seconds to cool down...")
-                time.sleep(30)  # this sleep fully blocks here
-                consecutive_failures = 0
+            logging.warning(f"Consecutive failures: {consecutive_failures}, sleeping 15 seconds before continuing.")
+            time.sleep(15)
 
-        if i > 0 and i % 25 == 0:
-            logging.info(f"Prefetched {i} players so far, sleeping 12 seconds to avoid timeout...")
-            time.sleep(12)
+        if i % 25 == 0:
+            logging.info(f"Prefetched {i} players, sleeping 30 seconds to avoid API rate limits...")
+            time.sleep(30)
+
     logging.info("Finished background prefetch.")
 
 @app.route('/api/players')
@@ -190,11 +181,11 @@ def get_all_players():
         logging.info("Cache empty, fetching players live (slow)...")
         results = []
         for player in all_players:
-            data = fetch_player_data(player["id"])
+            data = fetch_player_data_with_one_retry(player["id"])
             if data:
                 results.append(data)
         return jsonify({"players": results})
-    return jsonify({"players": [p for p in player_data_cache.values() if p is not None]})
+    return jsonify({"players": list(player_data_cache.values())})
 
 @app.route('/api/players/team/<team_abbr>')
 def get_players_by_team(team_abbr):
@@ -206,13 +197,12 @@ def get_players_by_team(team_abbr):
     filtered_players = []
 
     for player in all_players:
-        data = fetch_player_data(player["id"])
+        data = fetch_player_data_with_one_retry(player["id"])
         if not data:
             continue
         if data["team"]["abbreviation"] != team_abbr:
             continue
-        if all(p['id'] != data['id'] for p in filtered_players):
-            filtered_players.append(data)
+        filtered_players.append(data)
 
     return jsonify({"players": filtered_players})
 
@@ -232,9 +222,49 @@ def get_teams():
 @app.route('/api/status')
 def get_cache_status():
     return jsonify({
-        "cached_players_count": len([p for p in player_data_cache.values() if p is not None]),
+        "cached_players_count": len(player_data_cache),
         "cached_teams": list(player_team_cache.keys())
     })
+
+NBA_MOVEMENT_URL = "https://stats.nba.com/js/data/playermovement/NBA_Player_Movement.json"
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/114.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.nba.com/",
+    "Origin": "https://www.nba.com",
+}
+
+from datetime import datetime
+
+@app.route('/api/transactions/nba-movement')
+def get_nba_player_movement():
+    try:
+        response = requests.get(NBA_MOVEMENT_URL, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        rows = data.get('NBA_Player_Movement', {}).get('rows', [])
+
+        # Filter for 2025 only
+        filtered_rows = [
+            row for row in rows
+            if row.get('TRANSACTION_DATE') and datetime.fromisoformat(row['TRANSACTION_DATE']).year == 2025
+        ]
+
+        # Return filtered data under same structure, but only filtered rows
+        return jsonify({
+            'NBA_Player_Movement': {
+                'columns': data.get('NBA_Player_Movement', {}).get('columns', []),
+                'rows': filtered_rows
+            }
+        })
+    except Exception as e:
+        logging.error(f"Error fetching NBA player movement data: {e}")
+        return jsonify({"error": "Failed to fetch NBA player movement data"}), 500
 
 if __name__ == '__main__':
     threading.Thread(target=prefetch_all_players, daemon=True).start()

@@ -36,8 +36,8 @@
 }
 
 .table {
-  width: 90%;
-  max-width: 1000px;
+  width: 95%;
+  max-width: 1200px; /* wider */
   border-collapse: collapse;
   background: #0a0c10;
   border-radius: 10px;
@@ -45,6 +45,7 @@
   box-shadow: 0 0 20px #45a29e;
   color: white;
   table-layout: fixed;
+  margin: 0 auto; /* center horizontally */
 }
 
 .table thead tr {
@@ -69,13 +70,17 @@
   padding-left: 30px;
 }
 
+.table tbody tr:nth-child(odd) {
+  background-color: #12171d; /* dark shade */
+}
+
 .table tbody tr:nth-child(even) {
-  background-color: #12171d;
+  background-color: #1c222a; /* slightly lighter dark shade */
 }
 
 .table tbody tr:hover {
-  background-color: #45a29e;
-  color: #0b0c10;
+  background-color: #ff6f6f; /* soft light red */
+  color: #121212; /* dark text on light background */
   transition: background-color 0.3s ease;
   cursor: pointer;
 }
