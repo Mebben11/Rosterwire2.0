@@ -9,10 +9,6 @@ Rosterwire is a modern web application for viewing recent NBA transactions and e
 - 🏀 **NBA Roster Viewer** — Explore team rosters with season and career stats.
 - 🔄 **Transaction Feed** — View latest NBA trades and signings.
 - ⭐ **Player Rating System** — Visual star ratings (0–5) based on last season performance.
-- 📊 **Career Stats** — Player pages show season filtering and full history.
-- 🌗 **Light/Dark Mode** — Toggle between themes.
-- 📂 **Pagination** — 8 players per page for better performance.
-
 ---
 
 ## ⚙️ Technologies Used
