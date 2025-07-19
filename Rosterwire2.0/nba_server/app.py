@@ -103,7 +103,7 @@ def fetch_team_roster(team_id, season="2024-25"):
         # Filter by team
         team_players = df[df['TEAM_ID'] == team_id]
 
-        team_players = team_players[team_players['GP'] > 5]
+        team_players = team_players[team_players['GP'] > 10]
 
         results = []
         for _, row in team_players.iterrows():
